@@ -7,9 +7,20 @@ export function generateJsonReport(scanResult: WorkspaceScanResult, recommendati
     .filter((f) => f.included)
     .sort((a, b) => b.estimatedTokens - a.estimatedTokens);
 
+  const folderIncludedTokens = (folderPath: string): number => {
+    const prefix = folderPath === "." ? "" : `${folderPath.replace(/\/$/, "")}/`;
+    return sortedFiles.reduce((total, file) => {
+      if (folderPath === "." || file.relativePath.startsWith(prefix)) {
+        return total + file.estimatedTokens;
+      }
+      return total;
+    }, 0);
+  };
+
   const sortedFolders = [...scanResult.folders]
     .filter((f) => f.includedFiles > 0)
-    .sort((a, b) => b.totalTokens - a.totalTokens);
+    .map((f) => ({ ...f, includedTokens: folderIncludedTokens(f.folderPath) }))
+    .sort((a, b) => b.includedTokens - a.includedTokens);
 
   const largeFiles = sortedFiles.filter((f) => f.estimatedTokens > 50000);
 
@@ -41,8 +52,8 @@ export function generateJsonReport(scanResult: WorkspaceScanResult, recommendati
 
   const topFolders = sortedFolders.slice(0, 10).map((f) => ({
     path: f.folderPath,
-    tokens: f.totalTokens,
-    percentage: scanResult.includedTokens > 0 ? f.totalTokens / scanResult.includedTokens : 0,
+    tokens: f.includedTokens,
+    percentage: scanResult.includedTokens > 0 ? f.includedTokens / scanResult.includedTokens : 0,
   }));
 
   const languages = scanResult.languages
