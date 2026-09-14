@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import ignore from "ignore";
 import { DEFAULT_FILE_SIZE_CONFIG } from "@wma/core";
@@ -81,9 +81,21 @@ async function findNestedGitignoreFiles(
   signal?: AbortSignal,
 ): Promise<NestedIgnoreFile[]> {
   const results: NestedIgnoreFile[] = [];
+  const rootRealPath = await realpath(rootPath);
+  const visited = new Set<string>();
 
   async function visit(directory: string): Promise<void> {
     signal?.throwIfAborted();
+
+    let directoryRealPath: string;
+    try {
+      directoryRealPath = await realpath(directory);
+    } catch {
+      return;
+    }
+    if (!isWithinRoot(rootRealPath, directoryRealPath) || visited.has(directoryRealPath)) return;
+    visited.add(directoryRealPath);
+
     let entries;
     try {
       entries = await readdir(directory, { withFileTypes: true });
@@ -93,10 +105,21 @@ async function findNestedGitignoreFiles(
 
     for (const entry of entries) {
       signal?.throwIfAborted();
-      if (!entry.isDirectory()) continue;
       if (entry.name === ".git" || entry.name === ".svn" || entry.name === ".hg") continue;
 
       const childDirectory = path.join(directory, entry.name);
+      let isDirectory = entry.isDirectory();
+      if (entry.isSymbolicLink()) {
+        try {
+          const targetRealPath = await realpath(childDirectory);
+          if (!isWithinRoot(rootRealPath, targetRealPath)) continue;
+          isDirectory = (await stat(childDirectory)).isDirectory();
+        } catch {
+          continue;
+        }
+      }
+      if (!isDirectory) continue;
+
       const relativeDirectory = path.relative(rootPath, childDirectory).replace(/\\/g, "/");
       if (shouldPrune(relativeDirectory)) continue;
 
@@ -106,8 +129,7 @@ async function findNestedGitignoreFiles(
         results.push({ path: ignoreFile, content });
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-          // Preserve the warning behavior in loadIgnoreFiles without probing the
-          // same file a second time. Unreadable files are simply not loaded.
+          // Ignore unreadable nested ignore files and continue scanning.
         }
       }
 
@@ -157,4 +179,9 @@ function escapeIgnoreDirectory(directory: string): string {
       return escaped;
     })
     .join("/");
+}
+
+function isWithinRoot(rootRealPath: string, candidateRealPath: string): boolean {
+  const relative = path.relative(rootRealPath, candidateRealPath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
