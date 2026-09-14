@@ -3,38 +3,6 @@ import { REPORT_SCHEMA_VERSION, type WorkspaceReport, type WorkspaceScanResult, 
 export type JsonReport = WorkspaceReport;
 
 export function generateJsonReport(scanResult: WorkspaceScanResult, recommendation: RecommendationResult | null): string {
-  if (!recommendation) {
-    const emptyReport: JsonReport = {
-      schemaVersion: REPORT_SCHEMA_VERSION,
-      title: "Workspace Model Report",
-      generatedAt: scanResult.scannedAt,
-      workspacePath: scanResult.rootPath,
-      goal: null,
-      summary: {
-        totalFiles: scanResult.totalFiles,
-        includedFiles: scanResult.includedFiles,
-        excludedFiles: scanResult.excludedFiles,
-        totalEstimatedTokens: scanResult.totalEstimatedTokens,
-        includedTokens: scanResult.includedTokens,
-      },
-      topTokenConsumers: [],
-      topFolders: [],
-      languages: [],
-      recommendations: null,
-      warnings: scanResult.warnings,
-      assumptions: [],
-      optimizationChecklist: [],
-    };
-    return JSON.stringify(emptyReport, null, 2);
-  }
-
-  const allSuggestions = [
-    ...recommendation.cheapestSufficient.optimizationSuggestions,
-    ...recommendation.balanced.optimizationSuggestions,
-    ...recommendation.highConfidence.optimizationSuggestions,
-  ];
-  const uniqueSuggestions = [...new Set(allSuggestions)];
-
   const sortedFiles = [...scanResult.files]
     .filter((f) => f.included)
     .sort((a, b) => b.estimatedTokens - a.estimatedTokens);
@@ -45,7 +13,16 @@ export function generateJsonReport(scanResult: WorkspaceScanResult, recommendati
 
   const largeFiles = sortedFiles.filter((f) => f.estimatedTokens > 50000);
 
-  const checklist: string[] = [...uniqueSuggestions];
+  const checklist: string[] = recommendation
+    ? [
+        ...new Set([
+          ...recommendation.cheapestSufficient.optimizationSuggestions,
+          ...recommendation.balanced.optimizationSuggestions,
+          ...recommendation.highConfidence.optimizationSuggestions,
+        ]),
+      ]
+    : [];
+
   if (largeFiles.length > 0) {
     checklist.push(`Review ${largeFiles.length} file(s) exceeding 50k tokens for splitting or exclusion`);
   }
@@ -83,7 +60,7 @@ export function generateJsonReport(scanResult: WorkspaceScanResult, recommendati
     title: "Workspace Model Report",
     generatedAt: scanResult.scannedAt,
     workspacePath: scanResult.rootPath,
-    goal: recommendation.goal,
+    goal: recommendation?.goal ?? null,
     summary: {
       totalFiles: scanResult.totalFiles,
       includedFiles: scanResult.includedFiles,
@@ -94,13 +71,15 @@ export function generateJsonReport(scanResult: WorkspaceScanResult, recommendati
     topTokenConsumers,
     topFolders,
     languages,
-    recommendations: {
-      cheapestSufficient: recommendation.cheapestSufficient,
-      balanced: recommendation.balanced,
-      highConfidence: recommendation.highConfidence,
-    },
+    recommendations: recommendation
+      ? {
+          cheapestSufficient: recommendation.cheapestSufficient,
+          balanced: recommendation.balanced,
+          highConfidence: recommendation.highConfidence,
+        }
+      : null,
     warnings: scanResult.warnings,
-    assumptions: recommendation.assumptions,
+    assumptions: recommendation?.assumptions ?? [],
     optimizationChecklist: checklist,
   };
 
