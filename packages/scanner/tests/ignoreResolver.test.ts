@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { IgnoreResolver } from "../src/ignoreResolver.js";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -74,5 +74,34 @@ describe("IgnoreResolver", () => {
     const resolver = new IgnoreResolver({ additionalIgnoreFiles: [".customignore"] });
     await resolver.loadIgnoreFiles(tmpDir);
     expect(resolver.shouldIgnore("secrets/key.txt", 100).ignored).toBe(true);
+  });
+
+  it("should scope nested .gitignore patterns to their directory", async () => {
+    const packageDir = join(tmpDir, "packages", "app");
+    const otherDir = join(tmpDir, "packages", "other");
+    mkdirSync(packageDir, { recursive: true });
+    mkdirSync(otherDir, { recursive: true });
+    writeFileSync(join(packageDir, ".gitignore"), "*.log\ndist/\n");
+
+    const resolver = new IgnoreResolver();
+    await resolver.loadIgnoreFiles(tmpDir);
+
+    expect(resolver.shouldIgnore("packages/app/error.log", 100).ignored).toBe(true);
+    expect(resolver.shouldIgnore("packages/app/src/debug.log", 100).ignored).toBe(true);
+    expect(resolver.shouldIgnore("packages/app/dist/bundle.js", 100).ignored).toBe(true);
+    expect(resolver.shouldIgnore("packages/other/error.log", 100).ignored).toBe(false);
+    expect(resolver.shouldIgnore("error.log", 100).ignored).toBe(false);
+  });
+
+  it("should honor negation from nested .gitignore files", async () => {
+    const packageDir = join(tmpDir, "packages", "app");
+    mkdirSync(packageDir, { recursive: true });
+    writeFileSync(join(packageDir, ".gitignore"), "*.log\n!important.log\n");
+
+    const resolver = new IgnoreResolver();
+    await resolver.loadIgnoreFiles(tmpDir);
+
+    expect(resolver.shouldIgnore("packages/app/debug.log", 100).ignored).toBe(true);
+    expect(resolver.shouldIgnore("packages/app/important.log", 100).ignored).toBe(false);
   });
 });
