@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { IgnoreResolver } from "../src/ignoreResolver.js";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -130,5 +130,18 @@ describe("IgnoreResolver", () => {
 
     expect(resolver.shouldIgnore("packages/lib[old]/debug.log", 100).ignored).toBe(true);
     expect(resolver.shouldIgnore("packages/libo/debug.log", 100).ignored).toBe(false);
+  });
+
+  it("should load local ignore rules through in-workspace directory symlinks", async () => {
+    const targetDir = join(tmpDir, "packages", "target");
+    const linkDir = join(tmpDir, "linked-package");
+    mkdirSync(targetDir, { recursive: true });
+    writeFileSync(join(targetDir, ".gitignore"), "*.log\n");
+    symlinkSync(targetDir, linkDir, "dir");
+
+    const resolver = new IgnoreResolver();
+    await resolver.loadIgnoreFiles(tmpDir);
+
+    expect(resolver.shouldIgnore("linked-package/debug.log", 100).ignored).toBe(true);
   });
 });
