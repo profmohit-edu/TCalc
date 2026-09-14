@@ -102,7 +102,7 @@ describe("generateJsonReport", () => {
       bytes: 200000,
       estimatedTokens: 60000,
       included: true,
-      riskFlags: [] as const,
+      riskFlags: [],
     };
     scan.totalEstimatedTokens = 60000;
     scan.includedTokens = 60000;
