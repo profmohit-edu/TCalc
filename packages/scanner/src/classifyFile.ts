@@ -121,8 +121,12 @@ function isBuildOutput(relativePath: string): boolean {
 }
 
 function isDatabaseDump(relativePath: string): boolean {
-  const ext = path.extname(relativePath);
-  return [".sql", ".dump", ".sqlite", ".db"].includes(ext) && !ext.includes(".proto");
+  const ext = path.extname(relativePath).toLowerCase();
+  if ([".dump", ".sqlite", ".db"].includes(ext)) return true;
+  if (ext !== ".sql") return false;
+
+  const name = path.basename(relativePath).toLowerCase();
+  return /(?:^|[-_.])(backup|dump|export|snapshot|database)(?:[-_.]|$)/.test(name);
 }
 
 function isLogFile(relativePath: string): boolean {
