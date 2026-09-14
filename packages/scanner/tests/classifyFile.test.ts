@@ -68,8 +68,25 @@ describe("classifyFile", () => {
     expect(result.isGenerated).toBe(false);
   });
 
-  it("should detect database-dump risk", () => {
+  it("should detect database-dump risk for dump-like SQL files", () => {
     const result = classifyFile("backup.sql", 1000);
+    expect(result.riskFlags).toContain("database-dump");
+  });
+
+  it("should include SQL migration files as source by default", () => {
+    const result = classifyFile("migrations/001_init.sql", 1000);
+    expect(result.language).toBe("SQL");
+    expect(result.riskFlags).not.toContain("database-dump");
+  });
+
+  it("should include normal SQL query files as source by default", () => {
+    const result = classifyFile("src/queries/get-users.sql", 1000);
+    expect(result.language).toBe("SQL");
+    expect(result.riskFlags).not.toContain("database-dump");
+  });
+
+  it("should keep binary database files marked as database dumps", () => {
+    const result = classifyFile("data/app.sqlite", 1000);
     expect(result.riskFlags).toContain("database-dump");
   });
 
