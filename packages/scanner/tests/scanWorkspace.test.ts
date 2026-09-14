@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { scanWorkspace } from "../src/scanWorkspace.js";
@@ -69,6 +69,36 @@ describe("scanWorkspace traversal", () => {
     expect(second.totalFiles).toBe(first.totalFiles);
     expect(second.files.some((file) => file.path === cacheFile)).toBe(false);
     expect(third.cacheMisses).toBeGreaterThan(0);
+  });
+
+  it("rebuilds version 1 caches so stale SQL dump flags do not survive upgrades", async () => {
+    const root = await tempDirectory("tcalc-cache-upgrade-");
+    const cacheFile = path.join(root, ".cache", "scan.json");
+    const source = path.join(root, "query.sql");
+    await writeFile(source, "SELECT id FROM users;");
+    const sourceStat = await stat(source);
+    await mkdir(path.dirname(cacheFile), { recursive: true });
+    await writeFile(cacheFile, JSON.stringify({
+      version: 1,
+      tokenizerKey: "heuristic-v1",
+      files: {
+        "query.sql": {
+          bytes: sourceStat.size,
+          mtimeMs: sourceStat.mtimeMs,
+          estimatedTokens: 1,
+          riskFlags: ["database-dump"],
+        },
+      },
+    }));
+
+    const result = await scanWorkspace({ rootPath: root, cacheFile });
+    const query = result.files.find((file) => file.relativePath === "query.sql");
+    const rebuiltCache = JSON.parse(await readFile(cacheFile, "utf8")) as { version: number };
+
+    expect(result.cacheHits).toBe(0);
+    expect(query?.riskFlags).not.toContain("database-dump");
+    expect(query?.included).toBe(true);
+    expect(rebuiltCache.version).toBe(2);
   });
 
   it("uses an optional provider tokenizer in the scan path", async () => {
