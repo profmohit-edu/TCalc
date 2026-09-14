@@ -89,7 +89,9 @@ describe("IgnoreResolver", () => {
     expect(resolver.shouldIgnore("packages/app/error.log", 100).ignored).toBe(true);
     expect(resolver.shouldIgnore("packages/app/src/debug.log", 100).ignored).toBe(true);
     expect(resolver.shouldIgnore("packages/app/dist/bundle.js", 100).ignored).toBe(true);
+    expect(resolver.shouldIgnore("packages/app/src/dist/bundle.js", 100).ignored).toBe(true);
     expect(resolver.shouldIgnore("packages/other/error.log", 100).ignored).toBe(false);
+    expect(resolver.shouldIgnore("packages/other/src/dist/bundle.js", 100).ignored).toBe(false);
     expect(resolver.shouldIgnore("error.log", 100).ignored).toBe(false);
   });
 
@@ -103,5 +105,30 @@ describe("IgnoreResolver", () => {
 
     expect(resolver.shouldIgnore("packages/app/debug.log", 100).ignored).toBe(true);
     expect(resolver.shouldIgnore("packages/app/important.log", 100).ignored).toBe(false);
+  });
+
+  it("should stop nested ignore discovery when aborted", async () => {
+    const packageDir = join(tmpDir, "packages", "app");
+    mkdirSync(packageDir, { recursive: true });
+    writeFileSync(join(packageDir, ".gitignore"), "*.log\n");
+    const controller = new AbortController();
+    controller.abort();
+
+    const resolver = new IgnoreResolver({ signal: controller.signal });
+    await expect(resolver.loadIgnoreFiles(tmpDir)).rejects.toThrow();
+  });
+
+  it("should treat special characters in nested directory names literally", async () => {
+    const specialDir = join(tmpDir, "packages", "lib[old]");
+    const siblingDir = join(tmpDir, "packages", "libo");
+    mkdirSync(specialDir, { recursive: true });
+    mkdirSync(siblingDir, { recursive: true });
+    writeFileSync(join(specialDir, ".gitignore"), "*.log\n");
+
+    const resolver = new IgnoreResolver();
+    await resolver.loadIgnoreFiles(tmpDir);
+
+    expect(resolver.shouldIgnore("packages/lib[old]/debug.log", 100).ignored).toBe(true);
+    expect(resolver.shouldIgnore("packages/libo/debug.log", 100).ignored).toBe(false);
   });
 });
