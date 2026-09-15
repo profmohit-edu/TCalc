@@ -48,16 +48,25 @@ describe("scan cache persistence", () => {
     expect(await loadScanCache(cacheFile, "tok-v2")).toEqual(new Map());
   });
 
-  it("supports overlapping saves without sharing a temporary path", async () => {
+  it("supports overlapping saves with distinct temporary paths", async () => {
     const root = await temporaryRoot();
     const cacheFile = path.join(root, "cache.json");
     const first = new Map([["first.ts", entry(1)]]);
     const second = new Map([["second.ts", entry(2)]]);
+    const fs = await import("node:fs/promises");
+    const renameSpy = vi.spyOn(fs, "rename");
 
     await Promise.all([
       saveScanCache(cacheFile, "tok-v1", first),
       saveScanCache(cacheFile, "tok-v1", second),
     ]);
+
+    const temporaryPaths = renameSpy.mock.calls.map(([source]) => String(source));
+    expect(temporaryPaths).toHaveLength(2);
+    expect(new Set(temporaryPaths).size).toBe(2);
+    for (const temporary of temporaryPaths) {
+      expect(temporary).toMatch(new RegExp(`^${cacheFile.replace(/[.*+?^\${}()|[\]\\]/g, "\\$&")}\\.${process.pid}\\.[^.]+\\.tmp$`));
+    }
 
     const persisted = JSON.parse(await readFile(cacheFile, "utf8")) as { files: Record<string, ScanCacheEntry> };
     const keys = Object.keys(persisted.files);
